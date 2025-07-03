@@ -8,7 +8,7 @@
             padding: 0; 
             overflow: hidden; 
             touch-action: none; 
-            background-color: #87CEEB; /* Sky blue */
+            background-color: #87CEEB;
             font-family: Arial, sans-serif;
         }
         canvas { 
@@ -51,6 +51,7 @@
             justify-content: center;
             align-items: center;
             color: white;
+            font-size: 12px;
         }
         .inventory-slot.active {
             border-color: white;
@@ -61,9 +62,11 @@
     <canvas id="game"></canvas>
     <div id="joystick"><div id="joystickKnob"></div></div>
     <div id="inventory">
-        <div class="inventory-slot active">D</div>
-        <div class="inventory-slot">G</div>
-        <div class="inventory-slot">S</div>
+        <div class="inventory-slot active">D (99)</div>
+        <div class="inventory-slot">G (99)</div>
+        <div class="inventory-slot">S (99)</div>
+        <div class="inventory-slot">W (99)</div>
+        <div class="inventory-slot">Sd (99)</div>
     </div>
 
     <script>
@@ -80,6 +83,16 @@
         const JUMP_FORCE = -10;
         const PLAYER_SPEED = 3;
 
+        // Block types
+        const BLOCKS = {
+            AIR: 0,
+            DIRT: 1,
+            GRASS: 2,
+            STONE: 3,
+            WOOD: 4,
+            SAND: 5
+        };
+
         // Player
         const player = {
             x: 100,
@@ -89,16 +102,25 @@
             velX: 0,
             velY: 0,
             isJumping: false,
-            selectedBlock: 1 // 1: Dirt, 2: Grass, 3: Stone
+            selectedBlock: BLOCKS.DIRT
         };
 
-        // World (0 = air, 1 = dirt, 2 = grass, 3 = stone)
-        const world = Array(WORLD_WIDTH).fill().map(() => Array(WORLD_HEIGHT).fill(0));
+        // Inventory
+        const inventory = {
+            [BLOCKS.DIRT]: { name: "Dirt", count: 99 },
+            [BLOCKS.GRASS]: { name: "Grass", count: 99 },
+            [BLOCKS.STONE]: { name: "Stone", count: 99 },
+            [BLOCKS.WOOD]: { name: "Wood", count: 99 },
+            [BLOCKS.SAND]: { name: "Sand", count: 99 }
+        };
+
+        // World
+        const world = Array(WORLD_WIDTH).fill().map(() => Array(WORLD_HEIGHT).fill(BLOCKS.AIR));
         
         // Generate ground
         for (let x = 0; x < WORLD_WIDTH; x++) {
             for (let y = WORLD_HEIGHT - 3; y < WORLD_HEIGHT; y++) {
-                world[x][y] = y === WORLD_HEIGHT - 3 ? 2 : 1; // Grass on top layer
+                world[x][y] = y === WORLD_HEIGHT - 3 ? BLOCKS.GRASS : BLOCKS.DIRT;
             }
         }
 
@@ -139,14 +161,19 @@
             const dy = touchY - joystickStartY;
             const distance = Math.sqrt(dx * dx + dy * dy);
             const maxDistance = 30;
+            const deadZone = 5;
 
-            if (distance > maxDistance) {
-                const angle = Math.atan2(dy, dx);
-                joystickX = Math.cos(angle) * maxDistance;
-                joystickY = Math.sin(angle) * maxDistance;
+            if (distance > deadZone) {
+                if (distance > maxDistance) {
+                    const angle = Math.atan2(dy, dx);
+                    joystickX = Math.cos(angle) * maxDistance;
+                    joystickY = Math.sin(angle) * maxDistance;
+                } else {
+                    joystickX = dx;
+                    joystickY = dy;
+                }
             } else {
-                joystickX = dx;
-                joystickY = dy;
+                joystickX = joystickY = 0;
             }
 
             joystickKnob.style.transform = `translate(${joystickX + 30}px, ${joystickY + 30}px)`;
@@ -158,7 +185,7 @@
             slot.addEventListener('click', () => {
                 inventorySlots.forEach(s => s.classList.remove('active'));
                 slot.classList.add('active');
-                player.selectedBlock = index + 1;
+                player.selectedBlock = Object.keys(BLOCKS)[index + 1];
             });
         });
 
@@ -171,123 +198,70 @@
             const blockX = Math.floor(mouseX / BLOCK_SIZE);
             const blockY = Math.floor(mouseY / BLOCK_SIZE);
 
+            // Prevent placing inside player
+            const playerBlockX = Math.floor(player.x / BLOCK_SIZE);
+            const playerBlockY = Math.floor(player.y / BLOCK_SIZE);
+            if (Math.abs(blockX - playerBlockX) < 2 && Math.abs(blockY - playerBlockY) < 2) return;
+
             if (blockX >= 0 && blockX < WORLD_WIDTH && blockY >= 0 && blockY < WORLD_HEIGHT) {
-                if (world[blockX][blockY] === 0) {
-                    // Place block
-                    world[blockX][blockY] = player.selectedBlock;
+                if (world[blockX][blockY] === BLOCKS.AIR) {
+                    // Place block if available in inventory
+                    if (inventory[player.selectedBlock].count > 0) {
+                        world[blockX][blockY] = player.selectedBlock;
+                        inventory[player.selectedBlock].count--;
+                        updateInventoryDisplay();
+                    }
                 } else {
-                    // Break block
-                    world[blockX][blockY] = 0;
+                    // Break block and add to inventory
+                    const brokenBlock = world[blockX][blockY];
+                    inventory[brokenBlock].count++;
+                    world[blockX][blockY] = BLOCKS.AIR;
+                    updateInventoryDisplay();
                 }
             }
         });
 
-        // Collision detection
+        function updateInventoryDisplay() {
+            inventorySlots.forEach((slot, index) => {
+                const blockType = Object.keys(BLOCKS)[index + 1];
+                slot.textContent = `${inventory[blockType].name[0]} (${inventory[blockType].count})`;
+            });
+        }
+
+        // Optimized collision detection
         function checkCollision(x, y) {
-            const playerLeft = x;
-            const playerRight = x + player.width;
-            const playerTop = y;
-            const playerBottom = y + player.height;
+            const blockXStart = Math.floor(x / BLOCK_SIZE);
+            const blockXEnd = Math.floor((x + player.width) / BLOCK_SIZE);
+            const blockYStart = Math.floor(y / BLOCK_SIZE);
+            const blockYEnd = Math.floor((y + player.height) / BLOCK_SIZE);
 
-            // Check all blocks around player
-            for (let bx = Math.floor(playerLeft / BLOCK_SIZE); bx <= Math.floor(playerRight / BLOCK_SIZE); bx++) {
-                for (let by = Math.floor(playerTop / BLOCK_SIZE); by <= Math.floor(playerBottom / BLOCK_SIZE); by++) {
-                    if (bx >= 0 && bx < WORLD_WIDTH && by >= 0 && by < WORLD_HEIGHT && world[bx][by] !== 0) {
-                        const blockLeft = bx * BLOCK_SIZE;
-                        const blockRight = (bx + 1) * BLOCK_SIZE;
-                        const blockTop = by * BLOCK_SIZE;
-                        const blockBottom = (by + 1) * BLOCK_SIZE;
-
-                        // Check if player is colliding with this block
-                        if (playerRight > blockLeft && playerLeft < blockRight && 
-                            playerBottom > blockTop && playerTop < blockBottom) {
-                            return true;
-                        }
+            for (let bx = blockXStart; bx <= blockXEnd; bx++) {
+                for (let by = blockYStart; by <= blockYEnd; by++) {
+                    if (bx >= 0 && bx < WORLD_WIDTH && by >= 0 && by < WORLD_HEIGHT && world[bx][by] !== BLOCKS.AIR) {
+                        return true;
                     }
                 }
             }
             return false;
         }
 
-        // Game loop
-        function gameLoop() {
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-            // Draw sky
-            ctx.fillStyle = '#87CEEB';
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-            // Update player movement based on joystick
-            player.velX = joystickX / 10 * PLAYER_SPEED;
-            
-            // Apply gravity
-            player.velY += GRAVITY;
-
-            // Save original position for collision testing
-            const originalX = player.x;
-            const originalY = player.y;
-
-            // Apply horizontal movement
-            player.x += player.velX;
-            if (checkCollision(player.x, originalY)) {
-                player.x = originalX;
-            }
-
-            // Apply vertical movement
-            player.y += player.velY;
-            if (checkCollision(player.x, player.y)) {
-                if (player.velY > 0) {
-                    // Hit ground
-                    player.isJumping = false;
-                } else {
-                    // Hit ceiling
-                    player.velY = 0;
-                }
-                player.y = originalY;
-            }
-
-            // Jump if joystick is pushed up and player is on ground
-            if (joystickY < -15 && !player.isJumping && !checkCollision(player.x, player.y + 1)) {
-                player.velY = JUMP_FORCE;
-                player.isJumping = true;
-            }
-
-            // Draw world
+        // Draw functions
+        function drawWorld() {
             for (let x = 0; x < WORLD_WIDTH; x++) {
                 for (let y = 0; y < WORLD_HEIGHT; y++) {
-                    if (world[x][y] !== 0) {
-                        let color;
+                    if (world[x][y] !== BLOCKS.AIR) {
+                        // Block textures
                         switch (world[x][y]) {
-                            case 1: color = '#8B4513'; break; // Dirt
-                            case 2: color = '#7CFC00'; break; // Grass
-                            case 3: color = '#808080'; break; // Stone
-                            default: color = '#000000';
-                        }
-                        ctx.fillStyle = color;
-                        ctx.fillRect(x * BLOCK_SIZE, y * BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE);
-                        
-                        // Add block borders
-                        ctx.strokeStyle = '#000000';
-                        ctx.lineWidth = 1;
-                        ctx.strokeRect(x * BLOCK_SIZE, y * BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE);
-                    }
-                }
-            }
-
-            // Draw player
-            ctx.fillStyle = '#FF0000';
-            ctx.fillRect(player.x, player.y, player.width, player.height);
-
-            requestAnimationFrame(gameLoop);
-        }
-
-        // Handle window resize
-        window.addEventListener('resize', () => {
-            canvas.width = window.innerWidth;
-            canvas.height = window.innerHeight;
-        });
-
-        gameLoop();
-    </script>
-</body>
-</html>
+                            case BLOCKS.DIRT:
+                                const dirtGradient = ctx.createLinearGradient(
+                                    x * BLOCK_SIZE, y * BLOCK_SIZE, 
+                                    x * BLOCK_SIZE + BLOCK_SIZE, y * BLOCK_SIZE + BLOCK_SIZE
+                                );
+                                dirtGradient.addColorStop(0, '#5C4033');
+                                dirtGradient.addColorStop(1, '#8B4513');
+                                ctx.fillStyle = dirtGradient;
+                                break;
+                            case BLOCKS.GRASS:
+                                const grassGradient = ctx.createLinearGradient(
+                                    x * BLOCK_SIZE, y * BLOCK_SIZE, 
+                                    x * BLOCK_SIZE, y * BLOCK_SIZE + BLOCK_SIZ
