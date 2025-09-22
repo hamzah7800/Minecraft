@@ -1,11 +1,11 @@
-html>
+<!DOCTYPE html>
 <html style="width:100%;height:100%;background-color:black;">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <meta name="description" content="Eaglercraft OneBlock Optimized" />
-  <meta name="keywords" content="eaglercraft, eaglercraftx, minecraft, oneblock, 1.8, spigot" />
-  <title>HZ OneBlock</title>
+  <meta name="description" content="HZ OneBlock Patched Client" />
+  <meta name="keywords" content="eaglercraft, eaglercraftx, minecraft, oneblock, spigot" />
+  <title>HZ OneBlock Patched</title>
   <link type="image/png" rel="shortcut icon" href="favicon.png" />
   <script type="text/javascript" src="classes.js" defer></script>
 
@@ -17,20 +17,17 @@ html>
       } else {
         var relayId = Math.floor(Math.random() * 3);
 
+        // Force disable EaglyBridge check
         window.eaglercraftXOpts = {
           demoMode: false,
           container: "game_frame",
           assetsURI: "assets.epk",
           localesURI: "lang/",
           worldsDB: "worlds",
-          logInvalidCerts: false,
-          crashOnUncaughtExceptions: false,
-          maxParticles: 300,
-          disableInstancedRendering: true,
-          smoothGui: false,
-          renderScale: 0.5,
+          allowUnsupportedServers: true, // ⚡ patched: always allow connections
           servers: [
-            { addr: "wss://hzblocky.loca.lt", name: "HZ OneBlock" }
+            { addr: "ws://localhost:8081/", name: "Local OneBlock Server" },
+            { addr: "wss://hzblocky.loca.lt", name: "HZ Public OneBlock" }
           ],
           relays: [
             { addr: "wss://relay.deev.is/", comment: "relay #1", primary: relayId === 0 },
@@ -39,50 +36,8 @@ html>
           ]
         };
 
-        // Patch settings after client loads
-        let patchInterval = setInterval(() => {
-          if (window.EaglercraftX && window.EaglercraftX.settings) {
-            let s = window.EaglercraftX.settings;
-            s.useFXAA = false;
-            s.dynamicLights = false;
-            s.renderDistance = 6;
-            s.smoothLighting = false;
-            s.clouds = false;
-            s.particles = "minimal";
-            s.graphics = "fast";
-            s.entityShadows = false;
-            s.mipmapLevels = 0;
-            clearInterval(patchInterval);
-            console.log("⚡ Graphics patched for low-end performance");
-          }
-        }, 2000);
-
         // Start game
         main();
-
-        // Auto-disable VSync
-        setTimeout(() => {
-          if (window.EaglercraftX && window.EaglercraftX.mainLoop) {
-            let oldLoop = window.EaglercraftX.mainLoop;
-            function noVsyncLoop() {
-              oldLoop();
-              setTimeout(noVsyncLoop, 0);
-            }
-            noVsyncLoop();
-            console.log("⚡ VSync override enabled");
-          }
-        }, 3000);
-
-        // Async chunk building patch
-        setTimeout(() => {
-          if (window.EaglercraftX && window.EaglercraftX.chunkBuilder) {
-            let oldBuild = window.EaglercraftX.chunkBuilder.buildNext;
-            window.EaglercraftX.chunkBuilder.buildNext = function() {
-              setTimeout(() => oldBuild.call(window.EaglercraftX.chunkBuilder), 1);
-            };
-            console.log("⚡ Async chunk builder enabled");
-          }
-        }, 5000);
       }
     });
   </script>
