@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html style="width:100%;height:100%;background-color:black;">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="description" content="HZ OneBlock Patched Client" />
+  <meta name="keywords" content="eaglercraft, eaglercraftx, minecraft, oneblock, spigot" />
+  <title>HZ OneBlock Patched</title>
+  <link type="image/png" rel="shortcut icon" href="favicon.png" />
+  <script type="text/javascript" src="classes.js" defer></script>
+
+  <script type="text/javascript">
+    "use strict";
+    window.addEventListener("load", function() {
+      if(window.location.href.indexOf("file:") === 0) {
+        alert("Run this with HTTP (not file://)");
+      } else {
+        var relayId = Math.floor(Math.random() * 3);
+
+        // Force disable EaglyBridge check
+        window.eaglercraftXOpts = {
+          demoMode: false,
+          container: "game_frame",
+          assetsURI: "assets.epk",
+          localesURI: "lang/",
+          worldsDB: "worlds",
+          allowUnsupportedServers: true, // ⚡ patched: always allow connections
+          servers: [
+            { addr: "ws://localhost:8081/", name: "Local OneBlock Server" },
+            { addr: "wss://hzblocky.loca.lt", name: "HZ Public OneBlock" }
+          ],
+          relays: [
+            { addr: "wss://relay.deev.is/", comment: "relay #1", primary: relayId === 0 },
+            { addr: "wss://relay.lax1dude.net/", comment: "relay #2", primary: relayId === 1 },
+            { addr: "wss://relay.shhnowisnottheti.me/", comment: "relay #3", primary: relayId === 2 }
+          ]
+        };
+
+        // Start game
+        main();
+      }
+    });
+  </script>
+</head>
+<body style="margin:0px;width:100%;height:100%;overflow:hidden;background-color:black;" id="game_frame">
+</body>
+</html>
