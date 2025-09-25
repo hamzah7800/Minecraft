@@ -4,17 +4,42 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1.0,minimum-scale=1.0,maximum-scale=1.0,user-scalable=no" />
   <meta name="description" content="HZ OneBlock Potato Client" />
-  <meta name="keywords" content="eaglercraft, minecraft, oneblock, 1.8, fps, optimized" />
+  <meta name="keywords" content="eaglercraft, minecraft, oneblock, 1.8, spigot, optimized" />
   <title>HZ OneBlock Potato Mode</title>
   <link type="image/png" rel="shortcut icon" href="favicon.png" />
+
+  <!-- Define options BEFORE classes.js -->
+  <script type="text/javascript">
+    "use strict";
+    window.eaglercraftXOpts = {
+      demoMode: false,
+      container: "game_frame",
+      assetsURI: "assets.epk",
+      localesURI: "lang/",
+      worldsDB: "worlds",
+      logInvalidCerts: false,
+      crashOnUncaughtExceptions: false,
+      maxParticles: 100,
+      disableInstancedRendering: true,
+      smoothGui: false,
+      renderScale: 0.5,
+      servers: [],
+      relays: [
+        { addr: "wss://relay.deev.is/", comment: "relay #1", primary: true },
+        { addr: "wss://relay.lax1dude.net/", comment: "relay #2" },
+        { addr: "wss://relay.shhnowisnottheti.me/", comment: "relay #3" }
+      ]
+    };
+  </script>
+
+  <!-- Load the actual game -->
   <script type="text/javascript" src="classes.js"></script>
 </head>
 <body style="margin:0;width:100%;height:100%;overflow:hidden;background-color:black;" id="game_frame">
   <script type="text/javascript">
     "use strict";
     window.addEventListener("load", function() {
-      if(typeof main === "function") {
-        // start game
+      if (typeof main === "function") {
         main();
 
         // potato mode patch
@@ -36,7 +61,7 @@
           }
         }, 2000);
 
-        // disable vsync for turbo FPS
+        // turbo loop (disable vsync)
         setTimeout(() => {
           if (window.EaglercraftX && window.EaglercraftX.mainLoop) {
             let oldLoop = window.EaglercraftX.mainLoop;
@@ -45,23 +70,11 @@
               setTimeout(turboLoop, 0);
             }
             turboLoop();
-            console.log("⚡ Turbo loop enabled (vsync bypass)");
+            console.log("⚡ Turbo loop enabled");
           }
         }, 3000);
-
-        // async chunk building
-        setTimeout(() => {
-          if (window.EaglercraftX && window.EaglercraftX.chunkBuilder) {
-            let oldBuild = window.EaglercraftX.chunkBuilder.buildNext;
-            window.EaglercraftX.chunkBuilder.buildNext = function() {
-              setTimeout(() => oldBuild.call(window.EaglercraftX.chunkBuilder), 1);
-            };
-            console.log("⚡ Async chunk builder enabled");
-          }
-        }, 5000);
-
       } else {
-        console.error("❌ main() not found in classes.js, check your build!");
+        console.error("❌ main() not found in classes.js!");
       }
     });
   </script>
