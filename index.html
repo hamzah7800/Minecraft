@@ -1,240 +1,119 @@
-<script>
-"use strict";
-// Run after main() has started and EaglercraftX object exists.
-(function applyPerformancePatches() {
-  const LOG = (...a) => console.log("[perfpatch]", ...a);
+<!DOCTYPE html>
+<html style="width:100%;height:100%;background-color:black;">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1.0,minimum-scale=1.0,maximum-scale=1.0,user-scalable=no" />
+  <meta name="description" content="HZ OneBlock Client Ultra FPS" />
+  <meta name="keywords" content="eaglercraft, minecraft, oneblock, 1.8, spigot, fps" />
+  <title>HZ OneBlock Ultra FPS</title>
+  <link type="image/png" rel="shortcut icon" href="favicon.png" />
 
-  function safePoll(fn, whenReady, interval = 250, timeout = 15000) {
-    const start = Date.now();
-    const t = setInterval(() => {
-      try {
-        const v = fn();
-        if (v) {
-          clearInterval(t);
-          whenReady(v);
-        } else if (Date.now() - start > timeout) {
-          clearInterval(t);
-          LOG("timeout waiting for resource");
-        }
-      } catch (e) {
-        clearInterval(t);
-        LOG("error during safePoll", e);
-      }
-    }, interval);
-  }
-
-  // 1) Stabilize main loop: target stable FPS (try 120, drop if device slow)
-  function patchMainLoop(targetFPS = 120) {
-    if (!window.EaglercraftX || !window.EaglercraftX.mainLoop) {
-      LOG("mainLoop not found; skipping main loop patch");
-      return false;
-    }
-    if (window._perfPatched_mainLoop) { LOG("mainLoop already patched"); return true; }
-
-    const oldLoop = window.EaglercraftX.mainLoop.bind(window.EaglercraftX);
-    let lastFrame = performance.now();
-    let fpsSmoother = 0;
-    let desiredFPS = targetFPS;
-    let minDelay = 0; // ms
-
-    function loop() {
-      // measure how long oldLoop took and adapt
-      const t0 = performance.now();
-      try {
-        oldLoop();
-      } catch (e) {
-        // don't break patch on errors
-        console.error("[perfpatch] oldLoop error", e);
-      }
-      const t1 = performance.now();
-      const frameDuration = t1 - t0;
-      // Exponential smoothing of workload
-      fpsSmoother = fpsSmoother * 0.85 + frameDuration * 0.15;
-
-      // If frameDuration high, reduce desiredFPS to keep UI smooth (avoid thrash)
-      if (fpsSmoother > 8) desiredFPS = Math.max(30, Math.min(targetFPS, Math.floor(1000 / (fpsSmoother * 1.5))));
-      else desiredFPS = targetFPS;
-
-      // compute delay to hit desiredFPS (but at least 0)
-      const frameTarget = 1000 / desiredFPS;
-      const delay = Math.max(0, Math.round(frameTarget - (performance.now() - t1)));
-
-      // schedule next
-      setTimeout(loop, delay);
-    }
-
-    window.EaglercraftX.mainLoop = loop;
-    window._perfPatched_mainLoop = true;
-    LOG("mainLoop patched (targetFPS=" + targetFPS + ")");
-    return true;
-  }
-
-  // 2) Throttle GUI updates: skip GUI ticks if input not changing or not visible
-  function patchGuiThrottle(targetIntervalMs = 6 /* approx 166 FPS menu tick fallback */) {
-    if (!window.EaglercraftX || !window.EaglercraftX.gui) {
-      LOG("GUI object not found; skipping GUI throttle");
-      return false;
-    }
-    if (window._perfPatched_gui) { LOG("GUI already patched"); return true; }
-
-    // try to find the GUI update method(s)
-    const gui = window.EaglercraftX.gui;
-    const updateNames = ["update", "tick", "draw", "run"]; // guesses
-    let patched = false;
-
-    for (const name of updateNames) {
-      if (typeof gui[name] === "function") {
-        const old = gui[name].bind(gui);
-        let last = 0;
-        gui[name] = function () {
-          const now = performance.now();
-          if (now - last < targetIntervalMs) return; // throttle
-          last = now;
-          try { old(); } catch (e) { console.error("[perfpatch] gui."+name+" error", e); }
-        };
-        patched = true;
-        LOG("patched GUI."+name+" with throttle", targetIntervalMs, "ms");
-        break;
-      }
-    }
-
-    // fallback: throttle global GuiScreen.handleInput if exists
-    if (!patched && window.EaglercraftX && window.EaglercraftX.GuiScreen && typeof window.EaglercraftX.GuiScreen.handleInput === "function") {
-      const old = window.EaglercraftX.GuiScreen.handleInput.bind(window.EaglercraftX.GuiScreen);
-      let last = 0;
-      window.EaglercraftX.GuiScreen.handleInput = function() {
-        const now = performance.now();
-        if (now - last < targetIntervalMs) return;
-        last = now;
-        try { old(); } catch (e) { console.error("[perfpatch] GuiScreen.handleInput error", e); }
-      };
-      patched = true;
-      LOG("patched GuiScreen.handleInput with throttle", targetIntervalMs, "ms");
-    }
-
-    if (patched) window._perfPatched_gui = true;
-    return patched;
-  }
-
-  // 3) Lazy / incremental chunk builder: run small slices on idle to avoid spikes
-  function patchChunkBuilder(sliceMs = 2) {
-    if (!window.EaglercraftX || !window.EaglercraftX.chunkBuilder) {
-      LOG("chunkBuilder not found; skipping chunk patch");
-      return false;
-    }
-    if (window._perfPatched_chunk) { LOG("chunkBuilder already patched"); return true; }
-
-    const cb = window.EaglercraftX.chunkBuilder;
-    if (typeof cb.buildNext !== "function") {
-      LOG("chunkBuilder.buildNext not a function, abort");
-      return false;
-    }
-
-    const oldBuild = cb.buildNext.bind(cb);
-
-    // New incremental builder: run oldBuild in short slices using requestIdleCallback or setTimeout if not available.
-    cb.buildNext = function() {
-      const runSlice = () => {
-        const start = performance.now();
-        // call oldBuild but allow it to throw; catch errors to avoid breaking
-        try {
-          // Try to let oldBuild run but if it does many internal steps, we still slice using time budget
-          oldBuild();
-        } catch (e) {
-          // fallback: if oldBuild tries to operate with too many loops, we catch and continue
-          console.error("[perfpatch] oldBuild threw:", e);
-        }
-      };
-
-      if (window.requestIdleCallback) {
-        // schedule a short idle window
-        requestIdleCallback((deadline) => {
-          const t0 = performance.now();
-          // run as many slices as we have time for but at least one
-          runSlice();
-          // If more time remaining, schedule next little slice
-          if (deadline.timeRemaining() > 1) {
-            setTimeout(() => cb.buildNext(), 1);
-          }
-        }, {timeout: 50});
-      } else {
-        // fallback: run a single slice now but schedule another soon
-        runSlice();
-        setTimeout(() => cb.buildNext(), 5);
-      }
+  <!-- Define opts BEFORE classes.js -->
+  <script>
+    "use strict";
+    window.eaglercraftXOpts = {
+      demoMode: false,
+      container: "game_frame",
+      assetsURI: "assets.epk",
+      localesURI: "lang/",
+      worldsDB: "worlds",
+      logInvalidCerts: false,
+      crashOnUncaughtExceptions: false,
+      maxParticles: 50,                  // very few particles
+      disableInstancedRendering: true,   // safer for weak GPUs
+      smoothGui: false,                  // no GUI animations
+      renderScale: 0.25,                 // quarter resolution = huge FPS
+      servers: [
+        { addr: "ws://localhost:8081/", name: "Local OneBlock Server" }
+      ],
+      relays: [
+        { addr: "wss://relay.deev.is/", comment: "relay #1", primary: true },
+        { addr: "wss://relay.lax1dude.net/", comment: "relay #2" },
+        { addr: "wss://relay.shhnowisnottheti.me/", comment: "relay #3" }
+      ]
     };
+  </script>
 
-    // If there is an explicit queue, try to make it prioritized by distance
-    try {
-      if (Array.isArray(cb.chunkQueue) && typeof window.EaglercraftX.player !== "undefined") {
-        const player = () => (window.EaglercraftX.player || {});
-        const oldQueueSort = cb.sortQueue || null;
-        cb.sortQueue = function() {
-          try {
-            const px = player().posX || 0;
-            const pz = player().posZ || 0;
-            cb.chunkQueue.sort((a,b) => {
-              const da = Math.hypot((a.x<<4) - px, (a.z<<4) - pz);
-              const db = Math.hypot((b.x<<4) - px, (b.z<<4) - pz);
-              return da - db;
-            });
-          } catch(e){/* ignore */}
-          if (typeof oldQueueSort === "function") oldQueueSort.call(cb);
-        };
-        LOG("patched chunkQueue sorter to prioritize nearby chunks");
+  <!-- Load engine -->
+  <script type="text/javascript" src="classes.js"></script>
+</head>
+<body style="margin:0;width:100%;height:100%;overflow:hidden;background-color:black;" id="game_frame">
+  <script>
+    "use strict";
+
+    window.addEventListener("load", function() {
+      if (typeof main === "function") {
+        main();
+        console.log("✅ Game started with Ultra FPS mode");
+      } else {
+        alert("ERROR: main() not found in classes.js");
       }
-    } catch(e){ LOG("couldn't patch queue sorter", e); }
+    });
 
-    window._perfPatched_chunk = true;
-    LOG("patched chunkBuilder.buildNext to incremental mode");
-    return true;
-  }
+    /* Ultra FPS patches */
+    (function ultraFPS() {
+      const LOG = (...a) => console.log("[ultraFPS]", ...a);
 
-
-  // 4) Lazy texture / resource loading: reduce immediate work on boot
-  function patchResourceLoading() {
-    try {
-      if (!window.EaglercraftX) return false;
-      const res = window.EaglercraftX.resourceManager || window.EaglercraftX.assets || null;
-      if (!res) { LOG("no resource manager found"); return false; }
-      // If there's a method that eagerly loads all textures, try to wrap it.
-      if (typeof res.loadAll === "function" && !res._perfPatched_lazy) {
-        const old = res.loadAll.bind(res);
-        res.loadAll = function() {
-          // only load core textures now, defer rest
-          try {
-            if (typeof res.loadCore === "function") res.loadCore();
-          } catch(e){}
-          setTimeout(() => {
-            try { old(); } catch(e){ console.error("[perfpatch] deferred loadAll failed", e); }
-          }, 2000);
-        };
-        res._perfPatched_lazy = true;
-        LOG("patched resourceManager.loadAll to lazy-load after 2s");
-        return true;
+      function poll(fn, cb, i = 200) {
+        const t = setInterval(() => {
+          try { if (fn()) { clearInterval(t); cb(); } } catch {}
+        }, i);
       }
-    } catch(e) { LOG("resource patch error", e); }
-    return false;
-  }
 
-  // 5) Apply everything in a safe poll after main exists
-  safePoll(
-    () => window && window.EaglercraftX && typeof main === "function",
-    () => {
-      LOG("Applying performance patches...");
-      // patch main loop (target 120 FPS)
-      patchMainLoop(120);
-      // throttle GUI
-      patchGuiThrottle(4); // allow ~4ms between GUI ticks (~250Hz cap)
-      // patch chunk builder
-      patchChunkBuilder(2);
-      // patch resource loading
-      patchResourceLoading();
-      LOG("perfpatch applied");
-    },
-    200,
-    20000
-  );
+      function patchLoop(maxFPS = 999) {
+        if (!window.EaglercraftX || !window.EaglercraftX.mainLoop) return;
+        if (window._ultraFPS_loop) return;
 
-})();
-</script>
+        const oldLoop = window.EaglercraftX.mainLoop.bind(window.EaglercraftX);
+        function loop() {
+          try { oldLoop(); } catch (e) {}
+          setTimeout(loop, 0); // run as fast as CPU/GPU allows
+        }
+        window.EaglercraftX.mainLoop = loop;
+        window._ultraFPS_loop = true;
+        LOG("Main loop unlocked for unlimited FPS");
+      }
+
+      function patchGraphics() {
+        if (!window.EaglercraftX || !window.EaglercraftX.settings) return;
+        if (window._ultraFPS_gfx) return;
+        let s = window.EaglercraftX.settings;
+
+        s.useFXAA = false;
+        s.dynamicLights = false;
+        s.renderDistance = 2;   // minimum chunks
+        s.smoothLighting = false;
+        s.clouds = false;
+        s.particles = "minimal";
+        s.graphics = "fast";
+        s.entityShadows = false;
+        s.mipmapLevels = 0;
+        s.ao = false;
+
+        window._ultraFPS_gfx = true;
+        LOG("Graphics set to minimum");
+      }
+
+      function patchChunkBuilder() {
+        if (!window.EaglercraftX || !window.EaglercraftX.chunkBuilder) return;
+        if (window._ultraFPS_chunk) return;
+        const cb = window.EaglercraftX.chunkBuilder;
+        if (typeof cb.buildNext !== "function") return;
+        const old = cb.buildNext.bind(cb);
+        cb.buildNext = function() {
+          setTimeout(() => old(), 1); // async lazy build
+        };
+        window._ultraFPS_chunk = true;
+        LOG("Chunk builder patched for lazy async loading");
+      }
+
+      poll(() => window.EaglercraftX && typeof main === "function", () => {
+        LOG("Applying Ultra FPS patches...");
+        patchLoop(999);
+        patchGraphics();
+        patchChunkBuilder();
+      });
+    })();
+  </script>
+</body>
+</html>
