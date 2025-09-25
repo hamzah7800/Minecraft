@@ -3,93 +3,65 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1.0,minimum-scale=1.0,maximum-scale=1.0,user-scalable=no" />
-  <meta name="description" content="HZ OneBlock Ultra FPS Client" />
-  <meta name="keywords" content="eaglercraft, minecraft, oneblock, fps, performance" />
-  <title>HZ OneBlock (Ultra FPS)</title>
+  <meta name="description" content="HZ OneBlock Potato Client" />
+  <meta name="keywords" content="eaglercraft, minecraft, oneblock, 1.8, fps, optimized" />
+  <title>HZ OneBlock Potato Mode</title>
   <link type="image/png" rel="shortcut icon" href="favicon.png" />
-  <script type="text/javascript" src="classes.js" defer></script>
+  <script type="text/javascript" src="classes.js"></script>
 </head>
 <body style="margin:0;width:100%;height:100%;overflow:hidden;background-color:black;" id="game_frame">
   <script type="text/javascript">
     "use strict";
     window.addEventListener("load", function() {
-      if (window.location.href.indexOf("file:") === 0) {
-        alert("Run this with HTTP (not file://)");
-      } else {
-        var relayId = Math.floor(Math.random() * 3);
+      if(typeof main === "function") {
+        // start game
+        main();
 
-        // ⚡ Ultra FPS settings (lowest graphics, max raw speed)
-        window.eaglercraftXOpts = {
-          demoMode: false,
-          container: "game_frame",
-          assetsURI: "assets.epk",
-          localesURI: "lang/",
-          worldsDB: "worlds",
-          logInvalidCerts: false,
-          crashOnUncaughtExceptions: false,
-          maxParticles: 50,               // minimal particles
-          disableInstancedRendering: true,
-          smoothGui: false,
-          renderScale: 0.5,               // 50% resolution → big FPS boost
-          servers: [
-            { addr: "ws://localhost:8081/", name: "Local Test Server" } // dummy safe entry
-          ],
-          relays: [
-            { addr: "wss://relay.deev.is/", comment: "relay #1", primary: relayId === 0 },
-            { addr: "wss://relay.lax1dude.net/", comment: "relay #2", primary: relayId === 1 },
-            { addr: "wss://relay.shhnowisnottheti.me/", comment: "relay #3", primary: relayId === 2 }
-          ]
-        };
-
-        // 🔨 Patch all visuals to the absolute minimum
+        // potato mode patch
         let patchInterval = setInterval(() => {
           if (window.EaglercraftX && window.EaglercraftX.settings) {
             let s = window.EaglercraftX.settings;
             s.useFXAA = false;
             s.dynamicLights = false;
-            s.renderDistance = 2;       // lowest possible
+            s.renderDistance = 2;
             s.smoothLighting = false;
             s.clouds = false;
             s.particles = "minimal";
             s.graphics = "fast";
             s.entityShadows = false;
-            s.mipmapLevels = 0;         // no mipmaps at all
-            s.ao = false;               // ambient occlusion off
+            s.mipmapLevels = 0;
+            s.guiScale = 1;
             clearInterval(patchInterval);
-            console.log("⚡ Ultra FPS: all graphics disabled");
+            console.log("⚡ Potato mode applied: max FPS");
           }
         }, 2000);
 
-        // ✅ Start game
-        if (typeof main === "function") {
-          main();
-        } else {
-          console.error("❌ main() not found in classes.js");
-        }
-
-        // 🚫 Kill VSync → max raw FPS
+        // disable vsync for turbo FPS
         setTimeout(() => {
           if (window.EaglercraftX && window.EaglercraftX.mainLoop) {
             let oldLoop = window.EaglercraftX.mainLoop;
             function turboLoop() {
               oldLoop();
-              setTimeout(turboLoop, 0); // push CPU to the limit
+              setTimeout(turboLoop, 0);
             }
             turboLoop();
-            console.log("⚡ Turbo Loop enabled (no vsync, raw FPS)");
+            console.log("⚡ Turbo loop enabled (vsync bypass)");
           }
         }, 3000);
 
-        // 🧩 Async chunk building
+        // async chunk building
         setTimeout(() => {
           if (window.EaglercraftX && window.EaglercraftX.chunkBuilder) {
             let oldBuild = window.EaglercraftX.chunkBuilder.buildNext;
             window.EaglercraftX.chunkBuilder.buildNext = function() {
               setTimeout(() => oldBuild.call(window.EaglercraftX.chunkBuilder), 1);
             };
-            console.log("⚡ Async chunk builder enabled (faster loads)");
+            console.log("⚡ Async chunk builder enabled");
           }
         }, 5000);
+
+      } else {
+        console.error("❌ main() not found in classes.js, check your build!");
       }
     });
   </script>
