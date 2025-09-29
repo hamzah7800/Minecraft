@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1.0,minimum-scale=1.0,maximum-scale=1.0,user-scalable=no" />
   <meta name="description" content="HZ OneBlock Client Ultra FPS" />
   <meta name="keywords" content="eaglercraft, minecraft, oneblock, 1.8, spigot, fps" />
-  <title>HZ OneBlock Ultra FPS</title>
+  <title>HZ OneBlock Adaptive Ultra FPS</title>
   <link type="image/png" rel="shortcut icon" href="favicon.png" />
 
   <!-- Define opts BEFORE classes.js -->
@@ -19,10 +19,10 @@
       worldsDB: "worlds",
       logInvalidCerts: false,
       crashOnUncaughtExceptions: false,
-      maxParticles: 50,                  // very few particles
-      disableInstancedRendering: true,   // safer for weak GPUs
-      smoothGui: false,                  // no GUI animations
-      renderScale: 0.25,                 // quarter resolution = huge FPS
+      maxParticles: 50,
+      disableInstancedRendering: true,
+      smoothGui: false,
+      renderScale: 0.5,
       servers: [
         { addr: "ws://localhost:8081/", name: "Local OneBlock Server" }
       ],
@@ -44,13 +44,13 @@
     window.addEventListener("load", function() {
       if (typeof main === "function") {
         main();
-        console.log("✅ Game started with Ultra FPS mode");
+        console.log("✅ Game started with Adaptive Ultra FPS");
       } else {
         alert("ERROR: main() not found in classes.js");
       }
     });
 
-    /* Ultra FPS patches */
+    /* Adaptive Ultra FPS (soft cap 240 for older devices) */
     (function ultraFPS() {
       const LOG = (...a) => console.log("[ultraFPS]", ...a);
 
@@ -60,20 +60,42 @@
         }, i);
       }
 
-      function patchLoop(maxFPS = 999) {
+      // Detect performance level
+      function detectPerformance(callback) {
+        const start = performance.now();
+        let count = 0;
+        function test() {
+          count++;
+          if (performance.now() - start < 100) {
+            requestAnimationFrame(test);
+          } else {
+            const fpsEstimate = count * 10; // rough estimate in 100ms
+            let maxFPS;
+            if (fpsEstimate > 1000) maxFPS = 0;   // uncapped
+            else maxFPS = 240;                     // soft cap for older devices
+            callback(maxFPS);
+          }
+        }
+        test();
+      }
+
+      // Adaptive FPS loop
+      function patchLoop(maxFPS = 0) {
         if (!window.EaglercraftX || !window.EaglercraftX.mainLoop) return;
         if (window._ultraFPS_loop) return;
 
         const oldLoop = window.EaglercraftX.mainLoop.bind(window.EaglercraftX);
         function loop() {
           try { oldLoop(); } catch (e) {}
-          setTimeout(loop, 0); // run as fast as CPU/GPU allows
+          if (maxFPS > 0) setTimeout(loop, 1000 / maxFPS);
+          else setTimeout(loop, 0); // uncapped
         }
         window.EaglercraftX.mainLoop = loop;
         window._ultraFPS_loop = true;
-        LOG("Main loop unlocked for unlimited FPS");
+        LOG(maxFPS > 0 ? `Main loop capped at ${maxFPS} FPS for smoother performance` : "Main loop running uncapped (turbo mode)");
       }
 
+      // Optimize graphics for performance
       function patchGraphics() {
         if (!window.EaglercraftX || !window.EaglercraftX.settings) return;
         if (window._ultraFPS_gfx) return;
@@ -81,7 +103,7 @@
 
         s.useFXAA = false;
         s.dynamicLights = false;
-        s.renderDistance = 2;   // minimum chunks
+        s.renderDistance = 2;
         s.smoothLighting = false;
         s.clouds = false;
         s.particles = "minimal";
@@ -91,27 +113,27 @@
         s.ao = false;
 
         window._ultraFPS_gfx = true;
-        LOG("Graphics set to minimum");
+        LOG("Graphics set to minimum for max performance");
       }
 
+      // Async chunk builder
       function patchChunkBuilder() {
         if (!window.EaglercraftX || !window.EaglercraftX.chunkBuilder) return;
         if (window._ultraFPS_chunk) return;
         const cb = window.EaglercraftX.chunkBuilder;
         if (typeof cb.buildNext !== "function") return;
         const old = cb.buildNext.bind(cb);
-        cb.buildNext = function() {
-          setTimeout(() => old(), 1); // async lazy build
-        };
+        cb.buildNext = function() { setTimeout(() => old(), 1); };
         window._ultraFPS_chunk = true;
         LOG("Chunk builder patched for lazy async loading");
       }
 
+      // Apply patches once game is loaded
       poll(() => window.EaglercraftX && typeof main === "function", () => {
-        LOG("Applying Ultra FPS patches...");
-        patchLoop(999);
+        LOG("⚡ Applying Adaptive Ultra FPS patches...");
         patchGraphics();
         patchChunkBuilder();
+        detectPerformance(patchLoop);
       });
     })();
   </script>
